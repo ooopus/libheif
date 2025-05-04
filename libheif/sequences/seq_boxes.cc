@@ -472,6 +472,19 @@ Error Box_stsd::parse(BitstreamRange& range, const heif_security_limits* limits)
   }
 
   uint32_t entry_count = range.read32();
+
+  if (limits->max_sample_description_box_entries &&
+      entry_count > limits->max_sample_description_box_entries) {
+    std::stringstream sstr;
+    sstr << "Allocating " << static_cast<uint64_t>(entry_count) << " sample description items exceeds the security limit of "
+         << limits->max_sample_description_box_entries << " items";
+
+    return {heif_error_Memory_allocation_error,
+            heif_suberror_Security_limit_exceeded,
+            sstr.str()};
+
+  }
+
   for (uint32_t i = 0; i < entry_count; i++) {
     std::shared_ptr<Box> entrybox;
     Error err = Box::read(range, &entrybox, limits);
@@ -736,8 +749,26 @@ Error Box_stco::parse(BitstreamRange& range, const heif_security_limits* limits)
   }
 
   uint32_t entry_count = range.read32();
+
+  // check required memory
+
+  uint64_t mem_size = entry_count * sizeof(uint32_t);
+  if (limits->max_memory_block_size && mem_size > limits->max_memory_block_size) {
+    std::stringstream sstr;
+    sstr << "Allocating " << mem_size << " bytes for the 'stco' table exceeds the security limit of "
+         << limits->max_memory_block_size << " bytes";
+
+    return {heif_error_Memory_allocation_error,
+            heif_suberror_Security_limit_exceeded,
+            sstr.str()};
+  }
+
   for (uint32_t i = 0; i < entry_count; i++) {
     m_offsets.push_back(range.read32());
+
+    if (range.error()) {
+      return range.get_error();
+    }
   }
 
   return range.get_error();
@@ -806,8 +837,25 @@ Error Box_stsz::parse(BitstreamRange& range, const heif_security_limits* limits)
   m_sample_count = range.read32();
 
   if (m_fixed_sample_size == 0) {
+    // check required memory
+
+    uint64_t mem_size = m_sample_count * sizeof(uint32_t);
+    if (limits->max_memory_block_size && mem_size > limits->max_memory_block_size) {
+      std::stringstream sstr;
+      sstr << "Allocating " << mem_size << " bytes for the 'stsz' table exceeds the security limit of "
+           << limits->max_memory_block_size << " bytes";
+
+      return {heif_error_Memory_allocation_error,
+              heif_suberror_Security_limit_exceeded,
+              sstr.str()};
+    }
+
     for (uint32_t i = 0; i < m_sample_count; i++) {
       m_sample_sizes.push_back(range.read32());
+
+      if (range.error()) {
+        return range.get_error();
+      }
     }
   }
 
@@ -891,8 +939,25 @@ Error Box_stss::parse(BitstreamRange& range, const heif_security_limits* limits)
 
   uint32_t sample_count = range.read32();
 
+  // check required memory
+
+  uint64_t mem_size = sample_count * sizeof(uint32_t);
+  if (limits->max_memory_block_size && mem_size > limits->max_memory_block_size) {
+    std::stringstream sstr;
+    sstr << "Allocating " << mem_size << " bytes for the 'stss' table exceeds the security limit of "
+         << limits->max_memory_block_size << " bytes";
+
+    return {heif_error_Memory_allocation_error,
+            heif_suberror_Security_limit_exceeded,
+            sstr.str()};
+  }
+
   for (uint32_t i = 0; i < sample_count; i++) {
     m_sync_samples.push_back(range.read32());
+
+    if (range.error()) {
+      return range.get_error();
+    }
   }
 
   return range.get_error();
@@ -1250,6 +1315,17 @@ Error Box_sbgp::parse(BitstreamRange& range, const heif_security_limits* limits)
   }
 
   uint32_t count = range.read32();
+
+  if (limits->max_memory_block_size && uint64_t(count) * 2 * sizeof(uint32_t) > limits->max_memory_block_size) {
+    std::stringstream sstr;
+    sstr << "Allocating " << static_cast<uint64_t>(count) * 2 * sizeof(uint32_t) << " bytes for the 'sample to group' table exceeds the security limit of "
+         << limits->max_memory_block_size << " bytes";
+
+    return {heif_error_Memory_allocation_error,
+            heif_suberror_Security_limit_exceeded,
+            sstr.str()};
+  }
+
   for (uint32_t i = 0; i < count; i++) {
     Entry e;
     e.sample_count = range.read32();
@@ -1359,6 +1435,19 @@ Error Box_sgpd::parse(BitstreamRange& range, const heif_security_limits* limits)
   }
 
   uint32_t entry_count = range.read32();
+
+  if (limits->max_sample_group_description_box_entries &&
+      entry_count > limits->max_sample_group_description_box_entries) {
+    std::stringstream sstr;
+    sstr << "Allocating " << static_cast<uint64_t>(entry_count) << " sample group description items exceeds the security limit of "
+         << limits->max_sample_group_description_box_entries << " items";
+
+    return {heif_error_Memory_allocation_error,
+            heif_suberror_Security_limit_exceeded,
+            sstr.str()};
+
+  }
+
   for (uint32_t i = 0; i < entry_count; i++) {
     Entry entry;
 
@@ -1578,16 +1667,12 @@ Error Box_saiz::parse(BitstreamRange& range, const heif_security_limits* limits)
               heif_suberror_Security_limit_exceeded,
               sstr.str()};
     }
-  }
 
-  if (m_default_sample_info_size == 0) {
     m_sample_sizes.reserve(m_num_samples);
-    for (uint32_t i = 0; i < m_num_samples; i++) {
-      m_sample_sizes[i] = range.read8();
-    }
+    range.read(m_sample_sizes.data(), m_num_samples);
   }
 
-  return Error::Ok;
+  return range.get_error();
 }
 
 
@@ -1741,6 +1826,10 @@ Error Box_saio::parse(BitstreamRange& range, const heif_security_limits* limits)
     }
 
     m_sample_offset[i] = offset;
+
+    if (range.error()) {
+      return range.get_error();
+    }
   }
 
   return Error::Ok;
